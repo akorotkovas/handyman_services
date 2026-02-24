@@ -1,0 +1,779 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  CUSTOMER
+  TRADESPERSON
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  PENDING_VERIFICATION
+}
+
+enum TradespersonType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SubscriptionTier {
+  BASIC
+  PROFESSIONAL
+  PREMIUM
+}
+
+enum PriceUnit {
+  PER_HOUR
+  PER_DAY
+  PER_METER
+  PER_UNIT
+  PER_JOB
+}
+
+enum Urgency {
+  EMERGENCY
+  URGENT
+  FLEXIBLE
+  PLANNED
+}
+
+enum QuoteRequestStatus {
+  OPEN
+  CLOSED
+  EXPIRED
+  CANCELLED
+}
+
+enum QuoteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum MilestoneStatus {
+  PENDING
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  DISPUTED
+  RELEASED
+}
+
+enum PaymentStatus {
+  PENDING
+  HELD
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+enum MessageType {
+  TEXT
+  SYSTEM
+  QUOTE_SENT
+  MILESTONE_UPDATE
+}
+
+enum EvidenceType {
+  PHOTO
+  VIDEO
+  DOCUMENT
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_CUSTOMER
+  RESOLVED_TRADESPERSON
+  RESOLVED_COMPROMISE
+  CLOSED
+}
+
+enum DisputeReason {
+  POOR_QUALITY
+  INCOMPLETE_WORK
+  LATE_DELIVERY
+  OVERCHARGED
+  NO_SHOW
+  DAMAGE
+  SAFETY_CONCERN
+  OTHER
+}
+
+enum NotificationType {
+  QUOTE_RECEIVED
+  QUOTE_ACCEPTED
+  QUOTE_DECLINED
+  BOOKING_CONFIRMED
+  MILESTONE_SUBMITTED
+  MILESTONE_APPROVED
+  MILESTONE_DISPUTED
+  PAYMENT_RECEIVED
+  PAYMENT_RELEASED
+  NEW_MESSAGE
+  NEW_REVIEW
+  DISPUTE_OPENED
+  DISPUTE_RESOLVED
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  SUBSCRIPTION_EXPIRING
+}
+
+// ============================================================
+// AUTH & USERS
+// ============================================================
+
+model User {
+  id            String     @id @default(cuid())
+  email         String     @unique
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  phone         String?
+  avatar        String?
+  roles         UserRole[]
+  status        UserStatus @default(ACTIVE)
+  emailVerified DateTime?
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Auth
+  accounts Account[]
+  sessions Session[]
+
+  // Profile
+  tradespersonProfile TradespersonProfile?
+
+  // Customer relations
+  quoteRequests      QuoteRequest[]
+  bookingsAsCustomer Booking[]                  @relation("CustomerBookings")
+  reviewsWritten     Review[]                   @relation("ReviewAuthor")
+  reviewsReceived    Review[]                   @relation("ReviewTarget")
+  favorites          Favorite[]
+
+  // Messaging
+  conversationParticipants ConversationParticipant[]
+  messages                 Message[]
+
+  // Notifications
+  notifications           Notification[]
+  notificationPreferences NotificationPreference[]
+  pushSubscriptions       PushSubscription[]
+
+  @@index([email])
+  @@index([status])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================
+// TRADE CATEGORIES & SERVICES
+// ============================================================
+
+model TradeCategory {
+  id          String  @id @default(cuid())
+  name        String
+  nameEn      String
+  slug        String  @unique
+  icon        String?
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+
+  services             TradeService[]
+  tradespersonProfiles TradespersonProfileCategory[]
+}
+
+model TradeService {
+  id         String  @id @default(cuid())
+  categoryId String
+  name       String
+  nameEn     String
+  slug       String  @unique
+  isActive   Boolean @default(true)
+
+  category             TradeCategory        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  tradespersonServices TradespersonService[]
+  quoteRequests        QuoteRequest[]
+
+  @@index([categoryId])
+}
+
+// ============================================================
+// TRADESPERSON PROFILES
+// ============================================================
+
+model TradespersonProfile {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  type               TradespersonType
+  companyName        String?
+  companyCode        String?
+  vatCode            String?
+  slug               String             @unique
+  bio                String?
+  experience         Int?
+  city               String
+  municipality       String?
+  address            String?
+  latitude           Float?
+  longitude          Float?
+  serviceRadius      Int                @default(30)
+  phone              String
+  website            String?
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verifiedAt         DateTime?
+  insuranceExpiry    DateTime?
+  subscriptionTier   SubscriptionTier?
+  subscriptionEnd    DateTime?
+  stripeAccountId    String?
+  stripeOnboarded    Boolean            @default(false)
+  responseTime       Int?
+  completedJobs      Int                @default(0)
+  rating             Float              @default(0)
+  reviewCount        Int                @default(0)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user           User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories     TradespersonProfileCategory[]
+  services       TradespersonService[]
+  photos         TradespersonPhoto[]
+  qualifications Qualification[]
+  quotes         Quote[]
+  bookings       Booking[]
+  availability   TradespersonAvailability[]
+
+  @@index([city, verificationStatus, isActive])
+  @@index([rating])
+  @@index([slug])
+}
+
+model TradespersonProfileCategory {
+  id         String @id @default(cuid())
+  profileId  String
+  categoryId String
+
+  profile  TradespersonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  category TradeCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, categoryId])
+}
+
+model TradespersonService {
+  id          String    @id @default(cuid())
+  profileId   String
+  serviceId   String
+  priceFrom   Float?
+  priceTo     Float?
+  priceUnit   PriceUnit @default(PER_JOB)
+  description String?
+
+  profile TradespersonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  service TradeService        @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, serviceId])
+}
+
+model TradespersonPhoto {
+  id        String   @id @default(cuid())
+  profileId String
+  url       String
+  caption   String?
+  isBefore  Boolean  @default(false)
+  isAfter   Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  profile TradespersonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, sortOrder])
+}
+
+model Qualification {
+  id          String    @id @default(cuid())
+  profileId   String
+  name        String
+  issuer      String?
+  issueDate   DateTime?
+  expiryDate  DateTime?
+  documentUrl String?
+  verified    Boolean   @default(false)
+
+  profile TradespersonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model TradespersonAvailability {
+  id          String  @id @default(cuid())
+  profileId   String
+  dayOfWeek   Int
+  startTime   String
+  endTime     String
+  isAvailable Boolean @default(true)
+
+  profile TradespersonProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, dayOfWeek])
+}
+
+// ============================================================
+// QUOTE SYSTEM
+// ============================================================
+
+model QuoteRequest {
+  id            String             @id @default(cuid())
+  customerId    String
+  serviceId     String
+  title         String
+  description   String
+  city          String
+  address       String?
+  latitude      Float?
+  longitude     Float?
+  budgetMin     Float?
+  budgetMax     Float?
+  preferredDate DateTime?
+  urgency       Urgency            @default(FLEXIBLE)
+  status        QuoteRequestStatus @default(OPEN)
+  expiresAt     DateTime
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  customer User         @relation(fields: [customerId], references: [id])
+  service  TradeService @relation(fields: [serviceId], references: [id])
+  photos   QuoteRequestPhoto[]
+  quotes   Quote[]
+
+  @@index([serviceId, city, status])
+  @@index([customerId, status])
+  @@index([status, expiresAt])
+}
+
+model QuoteRequestPhoto {
+  id             String @id @default(cuid())
+  quoteRequestId String
+  url            String
+  caption        String?
+
+  quoteRequest QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
+
+  @@index([quoteRequestId])
+}
+
+model Quote {
+  id             String      @id @default(cuid())
+  quoteRequestId String
+  tradespersonId String
+  totalPrice     Float
+  description    String
+  estimatedDays  Int?
+  validUntil     DateTime
+  status         QuoteStatus @default(PENDING)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  quoteRequest QuoteRequest        @relation(fields: [quoteRequestId], references: [id])
+  tradesperson TradespersonProfile @relation(fields: [tradespersonId], references: [id])
+  milestones   QuoteMilestone[]
+  booking      Booking?
+
+  @@unique([quoteRequestId, tradespersonId])
+  @@index([tradespersonId, status])
+}
+
+model QuoteMilestone {
+  id          String @id @default(cuid())
+  quoteId     String
+  title       String
+  description String?
+  amount      Float
+  percentage  Float
+  sortOrder   Int
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId, sortOrder])
+}
+
+// ============================================================
+// BOOKINGS & MILESTONES (ESCROW)
+// ============================================================
+
+model Booking {
+  id             String        @id @default(cuid())
+  quoteId        String        @unique
+  customerId     String
+  tradespersonId String
+  totalPrice     Float
+  platformFee    Float
+  status         BookingStatus @default(PENDING)
+  startDate      DateTime?
+  endDate        DateTime?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  quote        Quote               @relation(fields: [quoteId], references: [id])
+  customer     User                @relation("CustomerBookings", fields: [customerId], references: [id])
+  tradesperson TradespersonProfile @relation(fields: [tradespersonId], references: [id])
+  milestones   Milestone[]
+  review       Review?
+  dispute      Dispute?
+  conversation Conversation?
+
+  @@index([customerId, status])
+  @@index([tradespersonId, status])
+  @@index([status, createdAt])
+}
+
+model Milestone {
+  id          String          @id @default(cuid())
+  bookingId   String
+  title       String
+  description String?
+  amount      Float
+  sortOrder   Int
+  status      MilestoneStatus @default(PENDING)
+  submittedAt DateTime?
+  approvedAt  DateTime?
+  releasedAt  DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  booking  Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  evidence MilestoneEvidence[]
+  payment  Payment?
+
+  @@index([bookingId, status])
+  @@index([status, submittedAt])
+}
+
+model MilestoneEvidence {
+  id          String       @id @default(cuid())
+  milestoneId String
+  type        EvidenceType
+  url         String
+  caption     String?
+  uploadedBy  String
+  createdAt   DateTime     @default(now())
+
+  milestone Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@index([milestoneId])
+}
+
+// ============================================================
+// PAYMENTS
+// ============================================================
+
+model Payment {
+  id                    String        @id @default(cuid())
+  milestoneId           String        @unique
+  stripePaymentIntentId String?       @unique
+  amount                Float
+  platformFee           Float
+  providerAmount        Float
+  currency              String        @default("EUR")
+  status                PaymentStatus @default(PENDING)
+  capturedAt            DateTime?
+  transferredAt         DateTime?
+  stripeTransferId      String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  milestone Milestone @relation(fields: [milestoneId], references: [id])
+
+  @@index([status])
+}
+
+// ============================================================
+// MESSAGING
+// ============================================================
+
+model Conversation {
+  id             String   @id @default(cuid())
+  bookingId      String?  @unique
+  quoteRequestId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  booking      Booking?                  @relation(fields: [bookingId], references: [id])
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([quoteRequestId])
+}
+
+model ConversationParticipant {
+  id             String    @id @default(cuid())
+  conversationId String
+  userId         String
+  lastReadAt     DateTime?
+  isMuted        Boolean   @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([conversationId, userId])
+}
+
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  type           MessageType @default(TEXT)
+  isRead         Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User               @relation(fields: [senderId], references: [id])
+  attachments  MessageAttachment[]
+
+  @@index([conversationId, createdAt])
+}
+
+model MessageAttachment {
+  id        String @id @default(cuid())
+  messageId String
+  url       String
+  fileName  String
+  fileSize  Int
+  mimeType  String
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+// ============================================================
+// REVIEWS
+// ============================================================
+
+model Review {
+  id           String   @id @default(cuid())
+  bookingId    String   @unique
+  authorId     String
+  targetUserId String
+  overall      Int
+  quality      Int
+  reliability  Int
+  communication Int
+  value        Int
+  comment      String?
+  response     String?
+  isPublished  Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  booking Booking       @relation(fields: [bookingId], references: [id])
+  author  User          @relation("ReviewAuthor", fields: [authorId], references: [id])
+  target  User          @relation("ReviewTarget", fields: [targetUserId], references: [id])
+  photos  ReviewPhoto[]
+
+  @@index([targetUserId, isPublished])
+  @@index([authorId])
+}
+
+model ReviewPhoto {
+  id       String  @id @default(cuid())
+  reviewId String
+  url      String
+  caption  String?
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@index([reviewId])
+}
+
+// ============================================================
+// DISPUTES
+// ============================================================
+
+model Dispute {
+  id           String        @id @default(cuid())
+  bookingId    String        @unique
+  milestoneId  String?
+  raisedById   String
+  reason       DisputeReason
+  description  String
+  status       DisputeStatus @default(OPEN)
+  resolution   String?
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  booking  Booking           @relation(fields: [bookingId], references: [id])
+  evidence DisputeEvidence[]
+
+  @@index([status])
+}
+
+model DisputeEvidence {
+  id          String       @id @default(cuid())
+  disputeId   String
+  uploadedBy  String
+  type        EvidenceType
+  url         String
+  description String?
+  createdAt   DateTime     @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+}
+
+// ============================================================
+// FAVORITES
+// ============================================================
+
+model Favorite {
+  id               String   @id @default(cuid())
+  userId           String
+  tradespersonId   String
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tradespersonId])
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+}
+
+model NotificationPreference {
+  id        String @id @default(cuid())
+  userId    String
+  eventType String
+  email     Boolean @default(true)
+  push      Boolean @default(true)
+  inApp     Boolean @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventType])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================================
+// PLATFORM / ADMIN
+// ============================================================
+
+model PlatformSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId, createdAt])
+}

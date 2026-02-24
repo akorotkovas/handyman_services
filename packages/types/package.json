@@ -1,0 +1,16 @@
+{
+  "name": "@meistrai/types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@meistrai/typescript-config": "workspace:*"
+  }
+}

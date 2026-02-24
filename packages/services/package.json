@@ -1,0 +1,23 @@
+{
+  "name": "@meistrai/services",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./stripe": "./src/stripe.ts",
+    "./email": "./src/email.ts",
+    "./rate-limit": "./src/rate-limit.ts",
+    "./storage": "./src/storage.ts"
+  },
+  "dependencies": {
+    "stripe": "^17.0.0",
+    "resend": "^4.0.0",
+    "sharp": "^0.34.0",
+    "@meistrai/db": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "@meistrai/typescript-config": "workspace:*"
+  }
+}
